@@ -19,6 +19,19 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.get("/holidays", async (req, res) => {
+  try {
+    const db = client.db();
+    const collection = db.collection(process.env.events);
+
+    const result = await collection.find({ display: "background" }).toArray();
+
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     const db = client.db();
@@ -61,6 +74,24 @@ router.post("/", async (req, res) => {
       year: req.body.year,
       series: req.body.series,
     },
+  };
+
+  try {
+    const db = client.db();
+    const collection = db.collection(process.env.events);
+
+    const result = await collection.insertOne(event);
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post("/holidays", async (req, res) => {
+  const event = {
+    start: req.body.start,
+    end: req.body.end,
+    display: "background",
   };
 
   try {
