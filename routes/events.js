@@ -6,6 +6,8 @@ const { MongoClient, ObjectId } = require("mongodb");
 
 const client = new MongoClient(process.env.DATABASE_URL);
 
+const RRule = require("rrule").RRule;
+
 router.get("/", async (req, res) => {
   try {
     const db = client.db();
@@ -34,6 +36,50 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  let holidays = [...req.body.holidays];
+  const exrule = holidays.map((element) => ({
+    freq: "minutely",
+    dtstart: new Date(element.start),
+    until: new Date(element.end),
+  }));
+
+  const start = new Date(req.body.start);
+
+  const rule = new RRule({
+    freq: RRule.WEEKLY,
+    dtstart: new Date(
+      Date.UTC(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate(),
+        start.getHours(),
+        start.getMinutes(),
+        0
+      )
+    ),
+    count: req.body.interval === 1 ? 14 : 7,
+    interval: req.body.interval,
+  });
+
+  const dates = rule.all();
+
+  const lastDate = dates[dates.length - 1];
+
+  let countIncreaser = 0;
+
+  holidays.forEach((element) => {
+    if (new Date(element.start) > start && new Date(element.end) < lastDate) {
+      countIncreaser = Math.round(
+        (new Date(element.end).getTime() - new Date(element.start).getTime()) /
+          1000 /
+          60 /
+          60 /
+          24 /
+          7
+      );
+    }
+  });
+
   const event = {
     allDay: false,
     title: `${req.body.subject}(${
@@ -47,12 +93,26 @@ router.post("/", async (req, res) => {
         ? "proiect"
         : null
     })`,
+    backgroundColor:
+      req.body.type === "course"
+        ? "green"
+        : req.body.type === "seminar"
+        ? "blue"
+        : req.body.type === "lab"
+        ? "purple"
+        : req.body.type === "project"
+        ? "brown"
+        : "",
     rrule: {
-      dtstart: req.body.start,
       freq: "weekly",
-      count: req.body.interval === 1 ? 14 : 7,
+      dtstart: req.body.start,
+      count:
+        req.body.interval === 1
+          ? 14 + countIncreaser
+          : 7 + Math.round(countIncreaser / 2),
       interval: req.body.interval,
     },
+    exrule: [...exrule],
     duration: `0${req.body.duration}:00`,
     extendedProps: {
       teacher: req.body.teacher,
@@ -89,16 +149,57 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+router.delete("/classroom/:id", async (req, res) => {
+  try {
+    const db = client.db();
+    const collection = db.collection(process.env.events);
+
+    const result = await collection.deleteMany({
+      "extendedProps.classroom._id": req.params.id,
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch("/:id", async (req, res) => {
   try {
     const db = client.db();
     const collection = db.collection(process.env.events);
 
+    let oldStart = new Date(req.body.oldStart);
+    let start = new Date(req.body.start);
+    let initialStart = new Date(req.body.initialStart);
+
+    initialStart.setTime(initialStart.getTime() - (oldStart - start));
+
     const result = await collection.updateOne(
       { _id: new ObjectId(req.params.id) },
       {
         $set: {
-          "rrule.dtstart": req.body.start,
+          "rrule.dtstart": initialStart,
+        },
+      }
+    );
+
+    res.status(200).json(result);
+  } catch (err) {}
+});
+
+router.patch("/classroom/:id", async (req, res) => {
+  try {
+    const db = client.db();
+    const collection = db.collection(process.env.events);
+
+    const result = await collection.updateMany(
+      { "extendedProps.classroom._id": req.params.id },
+      {
+        $set: {
+          "extendedProps.classroom.room": req.body.room,
+          "extendedProps.classroom.building": req.body.building,
+          "extendedProps.classroom.floor": req.body.floor,
         },
       }
     );
