@@ -123,26 +123,12 @@ router.post("/", async (req, res) => {
 
   const series = {
     series: req.body.series,
-    first: {
-      year: 1,
-      groups: groupsFirstYear,
-      semigroups: semigroupsFirstYear,
-    },
-    second: {
-      year: 2,
-      groups: groupsSecondYear,
-      semigroups: semigroupsSecondYear,
-    },
-    third: {
-      year: 3,
-      groups: groupsThirdYear,
-      semigroups: semigroupsThirdYear,
-    },
-    fourth: {
-      year: 4,
-      groups: groupsFourthYear,
-      semigroups: semigroupsFourthYear,
-    },
+    years: [
+      { year: 1, groups: groupsFirstYear, semigroups: semigroupsFirstYear },
+      { year: 2, groups: groupsSecondYear, semigroups: semigroupsSecondYear },
+      { year: 3, groups: groupsThirdYear, semigroups: semigroupsThirdYear },
+      { year: 4, groups: groupsFourthYear, semigroups: semigroupsFourthYear },
+    ],
   };
 
   try {
@@ -260,26 +246,28 @@ router.patch("/:id", async (req, res) => {
       {
         $set: {
           series: req.body.series,
-          first: {
-            year: 1,
-            groups: groupsFirstYear,
-            semigroups: semigroupsFirstYear,
-          },
-          second: {
-            year: 2,
-            groups: groupsSecondYear,
-            semigroups: semigroupsSecondYear,
-          },
-          third: {
-            year: 3,
-            groups: groupsThirdYear,
-            semigroups: semigroupsThirdYear,
-          },
-          fourth: {
-            year: 4,
-            groups: groupsFourthYear,
-            semigroups: semigroupsFourthYear,
-          },
+          years: [
+            {
+              year: 1,
+              groups: groupsFirstYear,
+              semigroups: semigroupsFirstYear,
+            },
+            {
+              year: 2,
+              groups: groupsSecondYear,
+              semigroups: semigroupsSecondYear,
+            },
+            {
+              year: 3,
+              groups: groupsThirdYear,
+              semigroups: semigroupsThirdYear,
+            },
+            {
+              year: 4,
+              groups: groupsFourthYear,
+              semigroups: semigroupsFourthYear,
+            },
+          ],
         },
       }
     );

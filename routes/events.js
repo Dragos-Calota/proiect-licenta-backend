@@ -36,53 +36,20 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  let holidays = [...req.body.holidays];
-  const exrule = holidays.map((element) => ({
-    freq: "minutely",
-    dtstart: new Date(element.start),
-    until: new Date(element.end),
-  }));
-
   const start = new Date(req.body.start);
 
   const rule = new RRule({
     freq: RRule.WEEKLY,
-    dtstart: new Date(
-      Date.UTC(
-        start.getFullYear(),
-        start.getMonth(),
-        start.getDate(),
-        start.getHours(),
-        start.getMinutes(),
-        0
-      )
-    ),
+    dtstart: start,
     count: req.body.interval === 1 ? 14 : 7,
     interval: req.body.interval,
   });
 
   const dates = rule.all();
 
-  const lastDate = dates[dates.length - 1];
-
-  let countIncreaser = 0;
-
-  holidays.forEach((element) => {
-    if (new Date(element.start) > start && new Date(element.end) < lastDate) {
-      countIncreaser = Math.round(
-        (new Date(element.end).getTime() - new Date(element.start).getTime()) /
-          1000 /
-          60 /
-          60 /
-          24 /
-          7
-      );
-    }
-  });
-
   const event = {
     allDay: false,
-    title: `${req.body.subject}(${
+    title: `${req.body.subject.name}(${
       req.body.type === "course"
         ? "curs"
         : req.body.type === "seminar"
@@ -105,14 +72,10 @@ router.post("/", async (req, res) => {
         : "",
     rrule: {
       freq: "weekly",
-      dtstart: req.body.start,
-      count:
-        req.body.interval === 1
-          ? 14 + countIncreaser
-          : 7 + Math.round(countIncreaser / 2),
+      dtstart: start,
+      count: req.body.interval === 1 ? 14 : 7,
       interval: req.body.interval,
     },
-    exrule: [...exrule],
     duration: `0${req.body.duration}:00`,
     extendedProps: {
       teacher: req.body.teacher,
@@ -120,12 +83,107 @@ router.post("/", async (req, res) => {
       classroom: req.body.classroom,
       year: req.body.year,
       series: req.body.series,
+      allDates: dates,
+      subject: req.body.subject,
+      interval: req.body.interval,
+      end: new Date(
+        new Date(start).setHours(start.getHours() + req.body.duration)
+      ),
     },
   };
 
   try {
     const db = client.db();
     const collection = db.collection(process.env.events);
+    const teachersCollection = db.collection(process.env.teachers);
+
+    const teacher = await teachersCollection.findOne({
+      _id: new ObjectId(event.extendedProps.teacher._id),
+    });
+
+    if (teacher.hasPreferences) {
+      if (!teacher.preferences[start.getDay() - 1].isAvailable) {
+        return res.json({
+          text: "Intervalul orar nu corespunde cu preferințele cadrului didactic",
+        });
+      }
+
+      if (teacher.preferences[start.getDay() - 1].isAvailable) {
+        if (
+          teacher.preferences[start.getDay() - 1].startHours >
+            start.getUTCHours() ||
+          teacher.preferences[start.getDay() - 1].endHours < start.getUTCHours()
+        ) {
+          return res.json({
+            text: "Intervalul orar nu corespunde cu preferințele cadrului didactic",
+          });
+        }
+
+        if (
+          teacher.preferences[start.getDay() - 1].endHours >
+          new Date(start).setUTCHours(start.getUTCHours() + event.duration)
+        ) {
+          return res.json({
+            text: "Intervalul orar nu corespunde cu preferințele cadrului didactic",
+          });
+        }
+      }
+    }
+
+    const teacherError = await collection
+      .find({
+        $or: [
+          {
+            "rrule.dtstart": {
+              $gte: start,
+              $lt: new Date(
+                start.getTime() + req.body.duration * 60 * 60 * 1000
+              ),
+            },
+          },
+          {
+            "extendedProps.end": {
+              $gt: start,
+              $lte: new Date(
+                start.getTime() + req.body.duration * 60 * 60 * 1000
+              ),
+            },
+          },
+        ],
+
+        "extendedProps.teacher._id": req.body.teacher._id,
+      })
+      .toArray();
+
+    if (teacherError.length > 0)
+      return res.json({ text: "Cadrul didactic este ocupat" });
+
+    const classroomError = await collection
+      .find({
+        $or: [
+          {
+            "rrule.dtstart": {
+              $gte: start,
+              $lt: new Date(
+                start.getTime() + req.body.duration * 60 * 60 * 1000
+              ),
+            },
+          },
+          {
+            "extendedProps.end": {
+              $gt: start,
+              $lte: new Date(
+                start.getTime() + req.body.duration * 60 * 60 * 1000
+              ),
+            },
+          },
+        ],
+        "extendedProps.classroom._id": req.body.classroom._id,
+      })
+      .toArray();
+
+    if (classroomError.length > 0)
+      return res.json({ text: "Sala este ocupată" });
 
     const result = await collection.insertOne(event);
     res.status(201).json(result);
@@ -164,22 +222,142 @@ router.delete("/classroom/:id", async (req, res) => {
   }
 });
 
-router.patch("/:id", async (req, res) => {
+router.delete("/teacher/:id", async (req, res) => {
   try {
     const db = client.db();
     const collection = db.collection(process.env.events);
 
-    let oldStart = new Date(req.body.oldStart);
-    let start = new Date(req.body.start);
-    let initialStart = new Date(req.body.initialStart);
+    const result = await collection.deleteMany({
+      "extendedProps.teacher._id": req.params.id,
+    });
 
-    initialStart.setTime(initialStart.getTime() - (oldStart - start));
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/:id", async (req, res) => {
+  let oldStart = new Date(req.body.oldStart);
+  let start = new Date(req.body.start);
+  let initialStart = new Date(req.body.initialStart);
+
+  initialStart.setTime(initialStart.getTime() - (oldStart - start));
+
+  const rule = new RRule({
+    freq: RRule.WEEKLY,
+    dtstart: new Date(initialStart),
+    count: req.body.interval === 1 ? 14 : 7,
+    interval: req.body.interval,
+  });
+
+  const dates = rule.all();
+  try {
+    const db = client.db();
+    const collection = db.collection(process.env.events);
+    const teachersCollection = db.collection(process.env.teachers);
+
+    const teacher = await teachersCollection.findOne({
+      _id: new ObjectId(req.body.teacherId),
+    });
+
+    if (teacher.hasPreferences) {
+      if (!teacher.preferences[initialStart.getDay() - 1].isAvailable) {
+        return res.json({
+          text: "Intervalul orar nu corespunde cu preferințele cadrului didactic",
+        });
+      }
+
+      if (teacher.preferences[initialStart.getDay() - 1].isAvailable) {
+        if (
+          teacher.preferences[initialStart.getDay() - 1].startHours >
+            initialStart.getUTCHours() ||
+          teacher.preferences[initialStart.getDay() - 1].endHours <
+            initialStart.getUTCHours()
+        ) {
+          return res.json({
+            text: "Intervalul orar nu corespunde cu preferințele cadrului didactic",
+          });
+        }
+
+        if (
+          teacher.preferences[initialStart.getDay() - 1].endHours >
+          new Date(initialStart).setUTCHours(
+            initialStart.getUTCHours() + req.body.duration
+          )
+        ) {
+          return res.json({
+            text: "Intervalul orar nu corespunde cu preferințele cadrului didactic",
+          });
+        }
+      }
+    }
+
+    const teacherError = await collection
+      .find({
+        $or: [
+          {
+            "rrule.dtstart": {
+              $gte: new Date(initialStart),
+              $lt: new Date(
+                initialStart.getTime() + req.body.duration * 60 * 60 * 1000
+              ),
+            },
+          },
+          {
+            "extendedProps.end": {
+              $gt: new Date(initialStart),
+              $lte: new Date(
+                initialStart.getTime() + req.body.duration * 60 * 60 * 1000
+              ),
+            },
+          },
+        ],
+        _id: { $ne: new ObjectId(req.body.currentEventId) },
+        "extendedProps.teacher._id": req.body.teacherId,
+      })
+      .toArray();
+
+    if (teacherError.length > 0)
+      return res.json({ text: "Cadrul didactic este ocupat" });
+
+    const classroomError = await collection
+      .find({
+        $or: [
+          {
+            "rrule.dtstart": {
+              $gte: new Date(initialStart),
+              $lt: new Date(
+                initialStart.getTime() + req.body.duration * 60 * 60 * 1000
+              ),
+            },
+          },
+          {
+            "extendedProps.end": {
+              $gt: new Date(initialStart),
+              $lte: new Date(
+                initialStart.getTime() + req.body.duration * 60 * 60 * 1000
+              ),
+            },
+          },
+        ],
+        _id: { $ne: new ObjectId(req.body.currentEventId) },
+        "extendedProps.classroom._id": req.body.classroomId,
+      })
+      .toArray();
+
+    if (classroomError.length > 0)
+      return res.json({ text: "Sala este ocupată" });
 
     const result = await collection.updateOne(
       { _id: new ObjectId(req.params.id) },
       {
         $set: {
           "rrule.dtstart": initialStart,
+          "extendedProps.allDates": dates,
+          "extendedProps.end": new Date(
+            initialStart.getTime() + req.body.duration * 60 * 60 * 1000
+          ),
         },
       }
     );

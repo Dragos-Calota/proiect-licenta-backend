@@ -41,6 +41,8 @@ router.post("/", async (req, res) => {
     name: req.body.name,
     title: req.body.title,
     email: req.body.email,
+    hasPreferences: req.body.hasPreferences,
+    preferences: req.body.preferences,
   };
 
   try {
@@ -80,6 +82,7 @@ router.patch("/:id", async (req, res) => {
   try {
     const db = client.db();
     const collection = db.collection(process.env.teachers);
+    const eventsCollection = db.collection(process.env.events);
 
     const result = await collection.updateOne(
       { _id: new ObjectId(req.params.id) },
@@ -88,6 +91,8 @@ router.patch("/:id", async (req, res) => {
           name: req.body.name,
           title: req.body.title,
           email: req.body.email,
+          hasPreferences: req.body.hasPreferences,
+          preferences: req.body.preferences,
         },
       }
     );

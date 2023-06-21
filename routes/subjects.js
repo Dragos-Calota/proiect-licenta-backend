@@ -136,4 +136,96 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
+router.patch("/teacher/:id", async (req, res) => {
+  try {
+    const db = client.db();
+    const collection = db.collection(process.env.subjects);
+
+    const subjectsResponse = await collection
+      .find({
+        "courseTeachers.teacher._id": req.params.id,
+      })
+      .toArray();
+
+    let courseTeachersBigArray = subjectsResponse.map((element) => ({
+      subjectId: element._id,
+      teachers: element.courseTeachers,
+    }));
+
+    courseTeachersBigArray.forEach((element) => {
+      element.teachers.forEach((series) => {
+        if (series.teacher._id === req.params.id) {
+          series.teacher = null;
+        }
+      });
+    });
+
+    let courseTeachers = [];
+
+    const allSubjects = await collection.find().toArray();
+
+    courseTeachersBigArray.forEach((element) => {
+      allSubjects.forEach((subject) => {
+        if (subject._id.toString() === element.subjectId.toString()) {
+          courseTeachers = element.teachers;
+        }
+      });
+    });
+
+    const response = await collection.updateMany(
+      {
+        "courseTeachers.teacher._id": req.params.id,
+      },
+      {
+        $set: {
+          courseTeachers: courseTeachers,
+        },
+      }
+    );
+
+    await collection.updateMany(
+      {
+        "seminarTeachers._id": req.params.id,
+      },
+      {
+        $pull: {
+          seminarTeachers: {
+            _id: req.params.id,
+          },
+        },
+      }
+    );
+
+    await collection.updateMany(
+      {
+        "labTeachers._id": req.params.id,
+      },
+      {
+        $pull: {
+          labTeachers: {
+            _id: req.params.id,
+          },
+        },
+      }
+    );
+
+    await collection.updateMany(
+      {
+        "projectTeachers._id": req.params.id,
+      },
+      {
+        $pull: {
+          projectTeachers: {
+            _id: req.params.id,
+          },
+        },
+      }
+    );
+
+    res.status(200).json(response);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 module.exports = router;
