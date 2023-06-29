@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const app = express();
+const port = 3001;
 
 app.use(express.json());
 app.use(cors());
@@ -17,4 +18,4 @@ app.use("/classrooms", classroomsRoutes);
 app.use("/series", seriesRoutes);
 app.use("/events", eventsRoutes);
 
-app.listen(3001, () => console.log("Server running on port 3001"));
+app.listen(port, () => console.log(`Server running on port ${port}`));
