@@ -79,7 +79,10 @@ router.post("/", async (req, res) => {
     duration: `0${req.body.duration}:00`,
     extendedProps: {
       teacher: req.body.teacher,
-      students: req.body.students,
+      students:
+        req.body.type === "course"
+          ? `Seria ${req.body.year}${req.body.series.series}`
+          : req.body.students,
       classroom: req.body.classroom,
       year: req.body.year,
       series: req.body.series,
@@ -185,6 +188,53 @@ router.post("/", async (req, res) => {
     if (classroomError.length > 0)
       return res.json({ text: "Sala este ocupată" });
 
+    const studentsError = await collection
+      .find({
+        $and: [
+          {
+            $or: [
+              {
+                "rrule.dtstart": {
+                  $gte: start,
+                  $lt: new Date(
+                    start.getTime() + req.body.duration * 60 * 60 * 1000
+                  ),
+                },
+              },
+              {
+                "extendedProps.end": {
+                  $gt: start,
+                  $lte: new Date(
+                    start.getTime() + req.body.duration * 60 * 60 * 1000
+                  ),
+                },
+              },
+            ],
+          },
+          {
+            $or: [
+              {
+                "extendedProps.students": event.extendedProps.students,
+              },
+              {
+                "extendedProps.students": event.extendedProps.students
+                  .split("")
+                  .slice(0, event.extendedProps.students.length - 1)
+                  .join(""),
+              },
+              { "extendedProps.students": `${event.extendedProps.students}a` },
+              { "extendedProps.students": `${event.extendedProps.students}b` },
+              {
+                "extendedProps.students": `Seria ${event.extendedProps.year}${event.extendedProps.series.series}`,
+              },
+            ],
+          },
+        ],
+      })
+      .toArray();
+
+    if (studentsError.length > 0)
+      return res.json({ text: "Studenții sunt ocupați" });
     const result = await collection.insertOne(event);
     res.status(201).json(result);
   } catch (err) {
@@ -348,6 +398,55 @@ router.patch("/:id", async (req, res) => {
 
     if (classroomError.length > 0)
       return res.json({ text: "Sala este ocupată" });
+
+    const studentsError = await collection
+      .find({
+        $and: [
+          {
+            $or: [
+              {
+                "rrule.dtstart": {
+                  $gte: new Date(initialStart),
+                  $lt: new Date(
+                    initialStart.getTime() + req.body.duration * 60 * 60 * 1000
+                  ),
+                },
+              },
+              {
+                "extendedProps.end": {
+                  $gt: new Date(initialStart),
+                  $lte: new Date(
+                    initialStart.getTime() + req.body.duration * 60 * 60 * 1000
+                  ),
+                },
+              },
+            ],
+          },
+          {
+            $or: [
+              {
+                "extendedProps.students": req.body.students,
+              },
+              {
+                "extendedProps.students": req.body.students
+                  .split("")
+                  .slice(0, req.body.students.length - 1)
+                  .join(""),
+              },
+              { "extendedProps.students": `${req.body.students}a` },
+              { "extendedProps.students": `${req.body.students}b` },
+              {
+                "extendedProps.students": `Seria ${req.body.year}${req.body.series.series}`,
+              },
+            ],
+          },
+          { _id: { $ne: new ObjectId(req.body.currentEventId) } },
+        ],
+      })
+      .toArray();
+
+    if (studentsError.length > 0)
+      return res.json({ text: "Studenții sunt ocupați" });
 
     const result = await collection.updateOne(
       { _id: new ObjectId(req.params.id) },
